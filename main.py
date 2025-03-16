@@ -28,7 +28,7 @@ def split_list(alist, wanted_parts=1):
     return [alist[i * len(alist) // wanted_parts: (i + 1) * len(alist) // wanted_parts] for i in range(wanted_parts)]
 
 def check_usernames(usernames):
-    """ Verifica usernames extraindo JSON do HTML da página """
+    """ Verifica usernames extraindo dados do HTML da página """
     for username in usernames:
         url = f"https://www.instagram.com/{username}/"
         headers = {
@@ -38,17 +38,16 @@ def check_usernames(usernames):
         try:
             response = requests.get(url, headers=headers, timeout=10)
 
+            # Se o status for 404, o usuário não existe
             if response.status_code == 404:
                 print(f"{green}{username}{white} is NOT taken")
                 with open("available.txt", 'a') as f:
                     f.write(f"{username}\n")
                 continue  # Pula para o próximo usuário
 
+            # Se o status for 200, procuramos no JSON se o perfil existe
             if response.status_code == 200:
-                # Extrai JSON da página
-                json_data = extract_json(response.text)
-
-                if json_data and json_data.get("entry_data"):
+                if check_if_profile_exists(response.text):
                     print(f"{red}{username}{white} is TAKEN")
                 else:
                     print(f"{green}{username}{white} is NOT taken")
@@ -62,22 +61,24 @@ def check_usernames(usernames):
 
         time.sleep(1)  # Pequeno delay para evitar bloqueios
 
-def extract_json(html):
-    """ Extrai JSON embutido na página do Instagram """
-    start = html.find("window._sharedData = ")
+def check_if_profile_exists(page_content):
+    """ Verifica se o perfil existe com base no conteúdo da página (JSON embutido) """
+    start = page_content.find("window._sharedData = ")
     if start == -1:
-        return None  # JSON não encontrado
+        return False  # Não encontrou o JSON
 
     start += len("window._sharedData = ")
-    end = html.find(";</script>", start)
+    end = page_content.find(";</script>", start)
     if end == -1:
-        return None  # JSON não encontrado
+        return False  # Não encontrou o final do JSON
 
-    json_text = html[start:end].strip()
+    json_text = page_content[start:end].strip()
     try:
-        return json.loads(json_text)
+        data = json.loads(json_text)
+        # Verifique se o "user" está presente
+        return 'user' in data.get('entry_data', {}).get('ProfilePage', [{}])[0]
     except json.JSONDecodeError:
-        return None  # JSON inválido
+        return False  # Se o JSON estiver corrompido ou mal formatado
 
 # Ler nomes de usuário do arquivo
 usernames = [line.strip() for line in open("usernames.txt")]
